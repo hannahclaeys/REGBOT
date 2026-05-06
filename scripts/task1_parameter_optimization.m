@@ -160,8 +160,44 @@ for gamma_M = gamma_M_range
 end
 
 %% =========================================================
-% 5. PLOT STEP RESPONSES FOR ALL CONFIGURATIONS
+% 5. COMPUTE PERFORMANCE METRICS (Overshoot & Settling Time)
 % ==========================================================
+
+fprintf('\n\nComputing performance metrics...\n');
+
+t_sim = 0:0.01:5;
+performance = struct();
+
+for i = 1:length(results)
+    % Get step response
+    y_sim = step(results(i).sys_closedloop, t_sim);
+    
+    % Compute overshoot
+    max_response = max(y_sim);
+    overshoot_percent = (max_response - ref_velocity) / ref_velocity * 100;
+    
+    % Compute settling time (2% criterion manually)
+    steady_state = y_sim(end);
+    tolerance_band = 0.02 * steady_state;
+    
+    settled_idx = find(abs(y_sim - steady_state) > tolerance_band, 1, 'last');
+    if isempty(settled_idx)
+        settling_time = t_sim(1);
+    else
+        settling_time = t_sim(settled_idx);
+    end
+    
+    % Store metrics
+    performance(i).overshoot = overshoot_percent;
+    performance(i).settling_time = settling_time;
+    performance(i).max_response = max_response;
+end
+
+%% =========================================================
+% 6. PLOT STEP RESPONSES FOR ALL CONFIGURATIONS
+% ==========================================================
+
+fprintf('Generating step response plots...\n\n');
 
 figure(fig_steps);
 num_configs = length(results);
@@ -188,13 +224,9 @@ for i = 1:num_configs
     ylim([0 0.7]);
     set(gca, 'FontSize', 9);
     
-    % Mark settling characteristics
-    [y_step, t_step, info] = step(results(i).sys_closedloop, t_sim);
-    
-    % Compute overshoot and settling time (2% criterion)
-    max_overshoot = max(y_step);
-    overshoot_percent = (max_overshoot - ref_velocity) / ref_velocity * 100;
-    settling_time = info.SettlingTime;
+    % Get performance metrics
+    overshoot_percent = performance(i).overshoot;
+    settling_time = performance(i).settling_time;
     
     % Color background based on performance
     if overshoot_percent < 10
@@ -215,37 +247,24 @@ sgtitle('PI Controller Parameter Optimization - Step Response Comparison', ...
         'FontSize', 14, 'FontWeight', 'bold');
 
 %% =========================================================
-% 6. SUMMARY TABLE
+% 7. SUMMARY TABLE
 % ==========================================================
 
-fprintf('\n\n');
 fprintf('==================================================== SUMMARY TABLE ====================================================\n');
 fprintf('%5s | %8s | %5s | %10s | %10s | %10s | %8s | %8s\n', ...
         'Idx', 'gamma_M', 'N_i', 'omega_c', 'tau_i', 'K_P', 'Oversh.', 'Settling');
 fprintf('-----------------------------------------------------------------------------------------------------------------------\n');
 
-% Store performance metrics for all configurations
-performance = [];
-
 for i = 1:num_configs
-    [y_step, ~, info] = step(results(i).sys_closedloop, 0:0.01:5);
-    
-    max_overshoot = max(y_step);
-    overshoot_percent = (max_overshoot - ref_velocity) / ref_velocity * 100;
-    settling_time = info.SettlingTime;
-    
-    performance(i).overshoot = overshoot_percent;
-    performance(i).settling_time = settling_time;
-    
     fprintf('%5d | %8.1f° | %5d | %10.3f | %10.4f | %10.4f | %7.2f%% | %8.2f\n', ...
             i, results(i).gamma_M, results(i).N_i, results(i).omega_c, ...
-            results(i).tau_i, results(i).K_P, overshoot_percent, settling_time);
+            results(i).tau_i, results(i).K_P, performance(i).overshoot, performance(i).settling_time);
 end
 
 fprintf('-----------------------------------------------------------------------------------------------------------------------\n');
 
 %% =========================================================
-% 7. FIND BEST CONFIGURATION
+% 8. FIND BEST CONFIGURATION
 % ==========================================================
 
 fprintf('\nSearching for optimal configuration based on stability criteria...\n');
@@ -281,8 +300,10 @@ fprintf('    • Settling Time: %.2f s\n', performance(best_idx).settling_time);
 fprintf('\n');
 
 %% =========================================================
-% 8. PLOT BODE DIAGRAMS FOR BEST CONFIGURATION
+% 9. PLOT BODE DIAGRAMS FOR BEST CONFIGURATION
 % ==========================================================
+
+fprintf('Generating Bode plots for best configuration...\n');
 
 fig_bode = figure('Position', [100 100 1200 600]);
 fig_bode.Name = sprintf('Best Configuration (gamma_M=%.0f°, N_i=%d) - Bode Plot', ...
@@ -318,12 +339,10 @@ sgtitle(sprintf('Best Configuration Analysis (γ_M=%.0f°, N_i=%d)', ...
         'FontSize', 14, 'FontWeight', 'bold');
 
 %% =========================================================
-% 9. COMPARE WITH MEASURED DATA
+% 10. COMPARE WITH MEASURED DATA
 % ==========================================================
 
-fprintf('\n=========================================================\n');
-fprintf('COMPARISON: MODEL vs MEASURED DATA\n');
-fprintf('=========================================================\n');
+fprintf('Generating comparison with measured data...\n');
 
 % Step response of best controller on identified model
 [y_model, t_model] = step(results(best_idx).sys_closedloop, t(end));
@@ -350,7 +369,7 @@ fprintf('\nNote: The linear model does not capture nonlinear effects like tilt c
 fprintf('For real robot testing, implement the controller and validate on REGBOT hardware.\n');
 
 %% =========================================================
-% 10. SAVE OPTIMAL PARAMETERS
+% 11. SAVE OPTIMAL PARAMETERS
 % ==========================================================
 
 fprintf('\n=========================================================\n');
